@@ -63,7 +63,7 @@ pipeline {
         stage('Run App') {
             steps {
                 sh 'docker rm -f student2-vuln-app || true'
-                sh 'docker run -d --name student2-vuln-app -p 3002:3000 student2-vuln-demo:latest'
+                sh 'docker run -d --name student2-vuln-app -p 3003:3000 student2-vuln-demo:latest'
             }
         }
 
