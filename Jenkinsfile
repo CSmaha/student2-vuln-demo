@@ -2,7 +2,6 @@ pipeline {
     agent any
 
     stages {
-
         stage('Checkout SCM') {
             steps {
                 checkout scm
@@ -33,9 +32,12 @@ pipeline {
                     withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                         sh '''
                         sonar-scanner \
-                        -Dsonar.projectKey= student2-vuln-demo\
-                        -Dsonar.projectName= student2-vuln-demo\
+                        -Dsonar.projectKey=student2-vuln-demo \
+                        -Dsonar.projectName=student2-vuln-demo \
+                        -Dsonar.projectVersion=1.0 \
                         -Dsonar.sources=. \
+                        -Dsonar.inclusions=app.js \
+                        -Dsonar.sourceEncoding=UTF-8 \
                         -Dsonar.host.url=http://192.168.119.129:9000 \
                         -Dsonar.login=$SONAR_TOKEN
                         '''
@@ -44,16 +46,24 @@ pipeline {
             }
         }
 
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
         stage('Docker Build') {
             steps {
-                sh 'docker build -t student2-vuln-demo :latest .'
+                sh 'docker build -t student2-vuln-demo:latest .'
             }
         }
 
         stage('Run App') {
             steps {
-                sh 'docker rm -f student2-app || true'
-                sh 'docker run -d --name student2-app -p 3002:3000 student2-vuln-demo :latest'
+                sh 'docker rm -f student2-vuln-app || true'
+                sh 'docker run -d --name student2-vuln-app -p 3002:3000 student2-vuln-demo:latest'
             }
         }
 
@@ -70,4 +80,3 @@ pipeline {
         }
     }
 }
-
