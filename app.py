@@ -1,110 +1,100 @@
-from flask import Flask, request
-import hashlib
-import random
-import sqlite3
-import subprocess
+from flask import Flask, request, make_response, render_template_string, redirect, url_for
 
 app = Flask(__name__)
 
-API_KEY = "secret-api-key"
-DB_PASSWORD = "root123"
-ADMIN_PASSWORD = "admin123"
+USERS = {
+    "student": "123456"
+}
 
+HOME_PAGE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Training Shop</title>
+</head>
+<body>
+    <h1>Training Shop</h1>
+    <p>Welcome to the demo application.</p>
+    <ul>
+        <li><a href="/search?q=test">Search</a></li>
+        <li><a href="/login?username=student&password=123456">Quick Login Demo</a></li>
+        <li><a href="/profile">Profile</a></li>
+    </ul>
+</body>
+</html>
+"""
 
 @app.route("/")
 def home():
-    return "Hello insecure python app"
+    response = make_response(HOME_PAGE)
+    response.set_cookie("session_id", "demo-session-value")
+    return response
 
+@app.route("/search")
+def search():
+    query = request.args.get("q", "")
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Search</title>
+    </head>
+    <body>
+        <h2>Search Results</h2>
+        <p>You searched for: {query}</p>
+        <a href="/">Back</a>
+    </body>
+    </html>
+    """
+    return html
 
-@app.route("/config")
-def config():
-    return {
-        "api_key": API_KEY,
-        "db_password": DB_PASSWORD,
-        "admin_password": ADMIN_PASSWORD
-    }
-
-
-@app.route("/hash")
-def weak_hash():
-    text = request.args.get("text", "test")
-    return hashlib.md5(text.encode()).hexdigest()
-
-
-@app.route("/token")
-def weak_token():
-    return str(random.randint(1000, 9999))
-
-
-@app.route("/user")
-def get_user():
-    user_id = request.args.get("id", "")
-    conn = sqlite3.connect("test.db")
-    cursor = conn.cursor()
-
-    query = "SELECT * FROM users WHERE id = " + user_id
-    cursor.execute(query)
-
-    rows = cursor.fetchall()
-    conn.close()
-    return str(rows)
-
-
-@app.route("/ping")
-def ping():
-    host = request.args.get("host", "127.0.0.1")
-    result = subprocess.check_output("ping -c 1 " + host, shell=True)
-    return result.decode()
-
-
-@app.route("/login")
+@app.route("/login", methods=["GET"])
 def login():
-    username = request.args.get("username")
-    password = request.args.get("password")
+    username = request.args.get("username", "")
+    password = request.args.get("password", "")
 
-    if username == "admin" and password == ADMIN_PASSWORD:
-        return "login success"
-    return "invalid"
+    if USERS.get(username) == password:
+        response = make_response(redirect(url_for("profile")))
+        response.set_cookie("auth", username)
+        return response
 
-
-def duplicated_logic_one(value):
-    if value is None:
-        return 0
-    if value == "":
-        return 0
-    total = 0
-    for i in range(100):
-        total = total + i
-    if value == "vip":
-        total = total + 100
-    return total
-
-
-def duplicated_logic_two(value):
-    if value is None:
-        return 0
-    if value == "":
-        return 0
-    total = 0
-    for i in range(100):
-        total = total + i
-    if value == "vip":
-        total = total + 100
-    return total
-
-
-@app.route("/calc")
-def calc():
-    a = duplicated_logic_one(request.args.get("a"))
-    b = duplicated_logic_two(request.args.get("b"))
-    return str(a + b)
-
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head><title>Login Failed</title></head>
+    <body>
+        <h3>Invalid credentials</h3>
+        <a href="/">Back</a>
+    </body>
+    </html>
+    """, 401
 
 @app.route("/profile")
 def profile():
-    user = None
-    return user["name"]
+    user = request.cookies.get("auth", "guest")
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Profile</title>
+    </head>
+    <body>
+        <h2>User Profile</h2>
+        <p>Welcome {{ user }}</p>
+        <p>Email: student@example.com</p>
+        <p>Role: user</p>
+        <a href="/">Home</a>
+    </body>
+    </html>
+    """, user=user)
 
+@app.route("/debug")
+def debug():
+    return {
+        "environment": "training",
+        "version": "1.0.0",
+        "feature_flag": True
+    }
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=3000)

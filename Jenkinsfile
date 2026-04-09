@@ -2,12 +2,13 @@ pipeline {
     agent any
 
     environment {
-        PROJECT_KEY    = 'student2-vuln-demo'
-        PROJECT_NAME   = 'student2-vuln-demo'
-        IMAGE_NAME     = 'student2-vuln-demo'
-        CONTAINER_NAME = 'student2-vuln-demo'
-        APP_PORT       = '3006'
+        PROJECT_KEY    = 'student2-owsap'
+        PROJECT_NAME   = 'student2-owsap'
+        IMAGE_NAME     = 'student2-owsap'
+        CONTAINER_NAME = 'student2-owsap'
+        APP_PORT       = '3011'
         SONAR_HOST_URL = 'http://192.168.119.129:9000'
+        APP_URL        = 'http://localhost:3010'
     }
 
     stages {
@@ -26,7 +27,7 @@ pipeline {
 
         stage('Install Dependencies') {
             steps {
-                sh 'pip3 install  --break-system-packages -r requirements.txt'
+                sh 'pip3 install -r requirements.txt'
             }
         }
 
@@ -50,14 +51,6 @@ pipeline {
             }
         }
 
-        stage('Quality Gate') {
-            steps {
-                timeout(time: 10, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
-                }
-            }
-        }
-
         stage('Docker Build') {
             steps {
                 sh 'docker build -t ${IMAGE_NAME}:latest .'
@@ -68,16 +61,77 @@ pipeline {
             steps {
                 sh 'docker rm -f ${CONTAINER_NAME} || true'
                 sh 'docker run -d --name ${CONTAINER_NAME} -p ${APP_PORT}:3000 ${IMAGE_NAME}:latest'
+                sh 'sleep 10'
+                sh 'curl -I ${APP_URL} || true'
+            }
+        }
+
+        stage('OWASP ZAP Scan') {
+            steps {
+                sh '''
+                    mkdir -p zap-report
+
+                    docker run --rm --network host \
+                      -v $(pwd)/zap-report:/zap/wrk/:rw \
+                      ghcr.io/zaproxy/zaproxy:stable \
+                      zap-baseline.py \
+                      -t ${APP_URL} \
+                      -r zap-report.html \
+                      -J zap-report.json \
+                      -m 3 || true
+                '''
+            }
+        }
+
+        stage('Fail on ZAP High Alerts') {
+            steps {
+                sh '''
+                    python3 - << 'PY'
+import json
+import sys
+
+report_file = 'zap-report/zap-report.json'
+
+with open(report_file, 'r', encoding='utf-8') as f:
+    data = json.load(f)
+
+high_count = 0
+medium_count = 0
+
+site = data.get('site')
+if isinstance(site, list):
+    sites = site
+else:
+    sites = [site] if site else []
+
+for s in sites:
+    for alert in s.get('alerts', []):
+        risk = str(alert.get('riskcode', '0'))
+        if risk == '3':
+            high_count += 1
+        elif risk == '2':
+            medium_count += 1
+
+print(f"HIGH alerts: {high_count}")
+print(f"MEDIUM alerts: {medium_count}")
+
+if high_count > 0:
+    sys.exit(1)
+PY
+                '''
             }
         }
     }
 
     post {
+        always {
+            archiveArtifacts artifacts: 'zap-report/*', fingerprint: true, allowEmptyArchive: true
+        }
         success {
             echo 'Pipeline finished successfully.'
         }
         failure {
-            echo 'Pipeline failed. Review SonarQube and Jenkins logs.'
+            echo 'Pipeline failed. Review ZAP report and Jenkins logs.'
         }
     }
 }
